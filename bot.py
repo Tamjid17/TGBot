@@ -3,7 +3,7 @@ import os
 from datetime import datetime
 import sqlite3
 from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -20,6 +20,45 @@ c = conn.cursor()
 c.execute('''CREATE TABLE IF NOT EXISTS images
             (date TEXT, file_id TEXT, caption TEXT)''')
 conn.commit()
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send welcome message with instructions"""
+    help_text = """
+    📸 *Image Date Bot* 📅
+
+    _Store and retrieve images by date!_
+
+    *How to use:*
+    1. 📤 *Upload an image* (with optional caption)
+       - I'll automatically save it with today's date
+    2. 🔍 *Search for images* by sending a date in format:
+       - `YYYY-MM-DD` (e.g., 2023-12-25)
+    
+    *Commands:*
+    /start - Show this welcome message
+    /help - Display usage instructions
+    """
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Send help message"""
+    help_text = """
+    🆘 *Help Guide* 🆘
+
+    1. *To save an image:*
+       - Simply send me any photo (JPEG/PNG)
+       - Add a caption if you want (optional)
+    
+    2. *To find images:*
+       - Send a date in this exact format:
+         `YYYY-MM-DD`
+       - Example: `2023-12-31` for New Year's Eve
+    
+    3. *Need help?*
+       - Use /start to see basic instructions
+       - Use /help to show this message
+    """
+    await update.message.reply_text(help_text, parse_mode='Markdown')
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save image with current date"""
@@ -70,6 +109,8 @@ def main() -> None:
     application = Application.builder().token(TOKEN).build()
     
     # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date))
 
