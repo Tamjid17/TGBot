@@ -58,6 +58,7 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "Bot is running!"
+    print("Railway URL:", os.getenv("RAILWAY_URL", "Not found"))
 
 def run_flask():
     app.run(host="0.0.0.0", port=8080)
