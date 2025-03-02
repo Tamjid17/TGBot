@@ -99,7 +99,7 @@ async def handle_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main() -> None:
     """Start the bot"""
-    TOKEN = os.getenv("BOT_TOKEN")
+    TOKEN = os.getenv("TOKEN")
     if not TOKEN:
         raise ValueError("Missing BOT_TOKEN environment variable")
 
