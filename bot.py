@@ -10,7 +10,7 @@ import threading
 # Load environment variables
 load_dotenv()
 
-TOKEN = os.getenv("BOT_TOKEN")
+TOKEN = os.getenv("TOKEN")
 MONGO_URI = os.getenv("MONGO_URI")
 
 if not TOKEN or not MONGO_URI:
