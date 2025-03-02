@@ -34,6 +34,10 @@ collection = db["images"]
 # Flask server (for webhooks and Railway health checks)
 app = Flask(__name__)
 
+@app.route("/")
+def health_check():
+    return "Bot is running!", 200
+
 # --- Webhook Handler ---
 @app.post(WEBHOOK_PATH)
 async def webhook_handler():
@@ -83,9 +87,9 @@ async def on_startup():
     print(f" Railway URL: {WEBHOOK_HOST}")
 
 def run_flask():
-    # Use uvicorn for production
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    port = int(os.getenv("PORT", 8080))
+    from uvicorn import run as uvicorn_run
+    uvicorn_run(app, host="0.0.0.0", port=port)
 
 async def main():
     # Start Flask in a separate thread (for Railway health checks)
