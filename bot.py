@@ -7,7 +7,6 @@ from pymongo import MongoClient
 from dotenv import load_dotenv
 from flask import Flask
 import threading
-from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
