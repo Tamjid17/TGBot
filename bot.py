@@ -3,13 +3,7 @@ import os
 from datetime import datetime
 import sqlite3
 from telegram import Update
-from telegram.ext import (
-    ApplicationBuilder,
-    ContextTypes,
-    MessageHandler,
-    filters,
-    CommandHandler
-)
+from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -21,47 +15,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Database setup
-def init_db():
-    conn = sqlite3.connect('images.db', check_same_thread=False)
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS images
-                (date TEXT, file_id TEXT, caption TEXT)''')
-    conn.commit()
-    return conn
-
-# Initialize database connection
-db_connection = init_db()
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Send welcome message"""
-    help_text = """
-    📸 Image Date Bot
-    
-    How to use:
-    1. Send me a photo (with optional caption)
-    2. Reply with a date (YYYY-MM-DD) to get photos from that day
-    
-    Example dates:
-    - 2023-12-25
-    - 2024-01-01
-    """
-    await update.message.reply_text(help_text)
+conn = sqlite3.connect('images.db', check_same_thread=False)
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS images
+            (date TEXT, file_id TEXT, caption TEXT)''')
+conn.commit()
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Save image with current date"""
     try:
-        user = update.message.from_user
         file_id = update.message.photo[-1].file_id
         caption = update.message.caption or "No caption"
-        today = datetime.today().strftime('%Y-%m-%d')
+        today = datetime.now().strftime('%Y-%m-%d')
 
-        # Thread-safe database operation
-        await context.application.run_async(
-            db_connection.execute,
-            "INSERT INTO images VALUES (?, ?, ?)",
-            (today, file_id, caption)
-        )
-        db_connection.commit()
+        # Simple synchronous DB operation
+        c.execute("INSERT INTO images VALUES (?, ?, ?)", (today, file_id, caption))
+        conn.commit()
 
         await update.message.reply_text(f"✅ Image saved for {today}!")
     except Exception as e:
@@ -74,22 +43,15 @@ async def handle_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = update.message.text.strip()
         input_date = datetime.strptime(text, '%Y-%m-%d').strftime('%Y-%m-%d')
         
-        # Thread-safe database query
-        cursor = await context.application.run_async(
-            db_connection.execute,
-            "SELECT file_id, caption FROM images WHERE date=?",
-            (input_date,)
-        )
-        
-        results = cursor.fetchall()
+        c.execute("SELECT file_id, caption FROM images WHERE date=?", (input_date,))
+        results = c.fetchall()
 
         if not results:
             await update.message.reply_text("❌ No images found for this date")
             return
 
         for file_id, caption in results:
-            await context.bot.send_photo(
-                chat_id=update.effective_chat.id,
+            await update.message.reply_photo(
                 photo=file_id,
                 caption=f"📅 {input_date}\n📝 {caption}"
             )
@@ -105,10 +67,9 @@ def main() -> None:
     if not TOKEN:
         raise ValueError("Missing BOT_TOKEN environment variable")
 
-    application = ApplicationBuilder().token(TOKEN).build()
-
+    application = Application.builder().token(TOKEN).build()
+    
     # Add handlers
-    application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date))
 
