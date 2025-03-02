@@ -2,3 +2,4 @@ aiogram
 pymongo
 dnspython
 python-dotenv
+flask
