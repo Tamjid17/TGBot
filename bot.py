@@ -4,6 +4,8 @@ from pymongo import MongoClient
 import datetime
 import os
 from dotenv import load_dotenv
+from flask import Flask
+import threading
 
 load_dotenv()
 
@@ -50,4 +52,17 @@ async def send_image(message: types.Message):
         await message.reply("Please enter a valid date in YYYY-MM-DD format.")
 
 if __name__ == "__main__":
+    executor.start_polling(dp, skip_updates=True)
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+if __name__ == "__main__":
+    threading.Thread(target=run_flask).start()
     executor.start_polling(dp, skip_updates=True)
