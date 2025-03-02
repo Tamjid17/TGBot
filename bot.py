@@ -1,103 +1,73 @@
-import asyncio
-import datetime
-import os
-from aiogram import Bot, Dispatcher, types
-from aiogram.types import Message, Update
-from pymongo import MongoClient
-from dotenv import load_dotenv
-from flask import Flask, request, Response
-import threading
+import logging
+from datetime import datetime
+from telegram import Update, InputFile
+from telegram.ext import (
+    ApplicationBuilder,
+    ContextTypes,
+    CommandHandler,
+    MessageHandler,
+    filters
+)
+import sqlite3
 
-# Load environment variables
-load_dotenv()
+# Set up logging
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.getenv("TOKEN")
-MONGO_URI = os.getenv("MONGO_URI")
-WEBHOOK_HOST = os.getenv("RAILWAY_URL")  # Automatically set by Railway
-WEBHOOK_PATH = f"/webhook/{TOKEN}"
-WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+# Initialize SQLite database
+conn = sqlite3.connect('images.db')
+c = conn.cursor()
+c.execute('''CREATE TABLE IF NOT EXISTS images
+             (date TEXT, file_id TEXT, caption TEXT)''')
+conn.commit()
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Save image with current date"""
+    user = update.message.from_user
+    file_id = update.message.photo[-1].file_id
+    caption = update.message.caption or "No caption"
+    today = datetime.today().strftime('%Y-%m-%d')
 
-# Validate required variables
-if not all([TOKEN, MONGO_URI, WEBHOOK_HOST]):
-    raise ValueError("Missing required environment variables. Check TOKEN, MONGO_URI, and RAILWAY_URL.")
+    # Store in database
+    c.execute("INSERT INTO images VALUES (?, ?, ?)", (today, file_id, caption))
+    conn.commit()
 
-# Initialize bot and dispatcher
-bot = Bot(token=TOKEN)
-dp = Dispatcher()
+    await update.message.reply_text(f"✅ Image saved for {today}!")
 
-# MongoDB connection
-client = MongoClient(MONGO_URI)
-db = client["telegram_bot"]
-collection = db["images"]
-
-# Flask server (for webhooks and Railway health checks)
-app = Flask(__name__)
-
-@app.route("/")
-def health_check():
-    return "Bot is running!", 200
-
-# --- Webhook Handler ---
-@app.post(WEBHOOK_PATH)
-async def webhook_handler():
-    update = Update(**await request.get_json())
-    await dp.feed_update(bot=bot, update=update)
-    return Response(status=200)
-
-# --- Image Upload Handler ---
-@dp.message(lambda msg: msg.photo)
-async def handle_photo(message: Message):
-    """Saves uploaded image with current date."""
-    file_id = message.photo[-1].file_id
-    today = datetime.date.today().isoformat()
-    caption = message.caption or "No caption"
-
-    collection.insert_one({
-        "file_id": file_id,
-        "upload_date": today,
-        "caption": caption
-    })
-    await message.reply("✅ Image saved for today!")
-
-# --- Retrieve Image by Date ---
-@dp.message(lambda msg: msg.text and len(msg.text) == 10)
-async def send_image(message: Message):
-    """Sends image based on user-provided date (YYYY-MM-DD)."""
+async def handle_date(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Return images for given date"""
+    text = update.message.text
     try:
-        query_date = datetime.datetime.strptime(message.text, "%Y-%m-%d").date()
-        result = collection.find_one({"upload_date": query_date.isoformat()})
+        # Validate date format
+        input_date = datetime.strptime(text, '%Y-%m-%d').strftime('%Y-%m-%d')
+        c.execute("SELECT file_id, caption FROM images WHERE date=?", (input_date,))
+        results = c.fetchall()
 
-        if result:
-            await message.answer_photo(
-                photo=result["file_id"],
-                caption=f"🗓 Date: {query_date}\n📝 Caption: {result['caption']}"
+        if not results:
+            await update.message.reply_text("❌ No images found for this date")
+            return
+
+        for file_id, caption in results:
+            await context.bot.send_photo(
+                chat_id=update.effective_chat.id,
+                photo=file_id,
+                caption=f"📅 {input_date}\n📝 {caption}"
             )
-        else:
-            await message.reply("❌ No image found for this date.")
-    
+
     except ValueError:
-        await message.reply("⚠️ Invalid date format. Use YYYY-MM-DD.")
+        await update.message.reply_text("⚠️ Please use YYYY-MM-DD format")
 
-# --- Startup ---
-async def on_startup():
-    """Set webhook and print debug info."""
-    await bot.set_webhook(WEBHOOK_URL)
-    print(f"✅ Webhook set to {WEBHOOK_URL}")
-    print(f" Railway URL: {WEBHOOK_HOST}")
+if __name__ == '__main__':
+    # Get token from Railway environment variables
+    TOKEN = os.getenv("TOKEN")
+    if not TOKEN:
+        raise ValueError("Missing BOT_TOKEN environment variable")
 
-def run_flask():
-    port = int(os.getenv("PORT", 8080))
-    from uvicorn import run as uvicorn_run
-    uvicorn_run(app, host="0.0.0.0", port=port)
+    # Create bot application
+    application = ApplicationBuilder().token(TOKEN).build()
 
-async def main():
-    # Start Flask in a separate thread (for Railway health checks)
-    threading.Thread(target=run_flask, daemon=True).start()
-    
-    # Set up webhook and start bot
-    await on_startup()
-    print("🚀 Bot is running with webhooks...")
+    # Add handlers
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_date))
 
-if __name__ == "__main__":
-    asyncio.run(main())
+    # Start polling
+    application.run_polling()
